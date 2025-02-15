@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Class Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>📚 Welcome to Live Class Platform</h1>
+            <p>Join live interactive classes with real-time video, chat, and screen sharing.</p>
+            <button onclick="startClass()"><i class="fas fa-play"></i> Start Class</button>
+        </div>
+    </div>
+
+    <div id="live-class" class="hidden">
+        <video id="localVideo" autoplay muted playsinline></video>
+        <video id="remoteVideo" autoplay playsinline></video>
+        <button onclick="startCall()"><i class="fas fa-video"></i> Start Call</button>
+        <button onclick="shareScreen()"><i class="fas fa-desktop"></i> Share Screen</button>
+        <button onclick="toggleMic()"><i class="fas fa-microphone"></i> Toggle Mic</button>
+        <button onclick="recordClass()"><i class="fas fa-record-vinyl"></i> Record Class</button>
+        <div id="chat">
+            <input type="text" id="chatInput" placeholder="Type a message...">
+            <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i> Send</button>
+            <div id="chatMessages"></div>
+        </div>
+    </div>
+    
+    <script>
+        let localStream;
+        let mediaRecorder;
+        let recordedChunks = [];
+        let peerConnections = {};
+        let socket = new WebSocket("wss://your-signaling-server.com");
+
+        async function startClass() {
+            document.querySelector(".card").style.display = "none";
+            document.getElementById("live-class").classList.remove("hidden");
+            await startCall();
+        }
+
+        async function startCall() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById("localVideo").srcObject = localStream;
+                socket.send(JSON.stringify({ type: "new-teacher", data: {} }));
+            } catch (error) {
+                console.error("Error accessing media devices.", error);
+            }
+        }
+
+        socket.onmessage = async function(event) {
+            let message = JSON.parse(event.data);
+            if (message.type === "new-student") {
+                let peerConnection = new RTCPeerConnection();
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+                peerConnections[message.id] = peerConnection;
+            }
+        };
+
+        async function shareScreen() {
+            try {
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                document.getElementById("localVideo").srcObject = screenStream;
+                screenStream.getVideoTracks()[0].onended = () => {
+                    document.getElementById("localVideo").srcObject = localStream;
+                };
+            } catch (error) {
+                console.error("Error sharing screen.", error);
+            }
+        }
+
+        function toggleMic() {
+            let audioTrack = localStream.getAudioTracks()[0];
+            audioTrack.enabled = !audioTrack.enabled;
+        }
+
+        function recordClass() {
+            mediaRecorder = new MediaRecorder(localStream);
+            mediaRecorder.ondataavailable = event => recordedChunks.push(event.data);
+            mediaRecorder.onstop = () => {
+                let blob = new Blob(recordedChunks, { type: "video/mp4" });
+                let url = URL.createObjectURL(blob);
+                let a = document.createElement("a");
+                a.href = url;
+                a.download = "class-recording.mp4";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                let recordingLink = document.createElement("a");
+                recordingLink.href = url;
+                recordingLink.textContent = "📼 Watch Recorded Class";
+                recordingLink.download = "class-recording.mp4";
+                document.getElementById("live-class").appendChild(recordingLink);
+            };
+            mediaRecorder.start();
+            setTimeout(() => mediaRecorder.stop(), 60000);
+        }
+
+        function sendMessage() {
+            let message = document.getElementById("chatInput").value;
+            let chatBox = document.getElementById("chatMessages");
+            let messageElement = document.createElement("p");
+            messageElement.textContent = message;
+            chatBox.appendChild(messageElement);
+            document.getElementById("chatInput").value = "";
+        }
+    </script>
+</body>
+</html>
